@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 import yaml
 
 @dataclass
@@ -16,6 +16,8 @@ class EncodingConfig:
     preserve_hdr: bool = True
     force_10bit: bool = True
     hdr_settings: Dict = None
+    ffmpeg_path: Optional[str] = None
+    ffprobe_path: Optional[str] = None
 
     @classmethod
     def from_yaml(cls, config_path: Path) -> 'EncodingConfig':

@@ -4,7 +4,7 @@ import subprocess
 import re
 from pathlib import Path
 from typing import Dict, Any
-from ..models.media_info import MediaInfo, MediaTrack, HDRMetadata
+from models.media_info import MediaInfo, MediaTrack, HDRMetadata
 
 class MediaAnalyzer:
     def __init__(self):

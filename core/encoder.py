@@ -2,9 +2,9 @@ import logging
 import subprocess
 from pathlib import Path
 from typing import List, Tuple
-from ..models.media_info import MediaInfo
-from ..config.encoding_config import EncodingConfig
-from ..utils.progress import ProgressTracker
+from models.media_info import MediaInfo
+from config.encoding_config import EncodingConfig
+from utils.progress import ProgressTracker
 
 class MediaEncoder:
     def __init__(self, output_dir: Path, config: EncodingConfig):

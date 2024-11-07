@@ -1,7 +1,11 @@
+# FFmpeg Settings
+ffmpeg_path: null  # Set to path if not in system PATH, e.g., "C:/ffmpeg/bin/ffmpeg.exe"
+ffprobe_path: null # Set to path if not in system PATH, e.g., "C:/ffmpeg/bin/ffprobe.exe"
+
 # Maximum Quality Configuration with HDR Support
 video_codec: libx265           # CPU encoding for highest quality
 video_preset: veryslow        # Slowest preset = highest quality
-video_crf: 14                 # Near lossless quality
+video_crf: 13                 # Near lossless quality
 max_threads: 16               # Match your 7800X3D thread count
 gpu_device: 0                 # For GPU encoding if needed
 copy_audio: true             # Preserve original audio
