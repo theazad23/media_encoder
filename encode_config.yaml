@@ -1,0 +1,23 @@
+# Maximum Quality Configuration with HDR Support
+video_codec: libx265           # CPU encoding for highest quality
+video_preset: veryslow        # Slowest preset = highest quality
+video_crf: 14                 # Near lossless quality
+max_threads: 16               # Match your 7800X3D thread count
+gpu_device: 0                 # For GPU encoding if needed
+copy_audio: true             # Preserve original audio
+copy_subtitles: true         # Preserve subtitles
+preserve_hdr: true           # Enable HDR metadata preservation
+force_10bit: true            # Force 10-bit encoding even for SDR
+preferred_languages:
+  - eng
+  - jpn
+  - kor
+  - cmn
+
+# HDR Settings
+hdr_settings:
+  color_primaries: auto      # 'auto', 'bt2020', 'bt709'
+  transfer: auto            # 'auto', 'smpte2084' (HDR10), 'arib-std-b67' (HLG)
+  color_matrix: auto        # 'auto', 'bt2020nc', 'bt709'
+  max_cll: preserve         # 'preserve' or specific value like '1000,400'
+  master_display: preserve  # 'preserve' or specific display specs
