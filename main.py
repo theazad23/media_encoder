@@ -7,6 +7,12 @@ from typing import List
 from config.encoding_config import EncodingConfig
 from core.analyzer import MediaAnalyzer
 from core.encoder import MediaEncoder
+from utils.bdvm_parser import BDMVParser
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 def check_ffmpeg():
     """Check if FFmpeg and FFprobe are available in the system."""
@@ -20,16 +26,16 @@ def check_ffmpeg():
         sys.exit(1)
         
 class BatchEncoder:
-    def __init__(self, input_dir: Path, output_dir: Path, config_path: Path = None):
+    def __init__(self, input_dir: Path, output_dir: Path, config_path: Path=None):
         self.input_dir = input_dir
         self.output_dir = output_dir
         self.config = EncodingConfig.from_yaml(config_path or Path('encoder_config.yml'))
         self.analyzer = MediaAnalyzer()
         self.encoder = MediaEncoder(output_dir, self.config)
         self.logger = logging.getLogger(__name__)
+        self.parser = BDMVParser(input_dir)
         
     def setup_logging(self):
-        """Configure logging for the encoding process."""
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -40,41 +46,79 @@ class BatchEncoder:
         )
 
     def find_main_movie_file(self, stream_dir: Path) -> Path:
-        """
-        Find the main movie file in a BDMV/STREAM directory.
-        Usually the largest .m2ts file is the main movie.
-        """
+        """Find the largest M2TS file in the stream directory."""
         m2ts_files = list(stream_dir.glob('*.m2ts'))
         if not m2ts_files:
-            raise ValueError(f"No .m2ts files found in {stream_dir}")
-            
-        # Sort by file size, largest first
+            raise ValueError(f'No .m2ts files found in {stream_dir}')
         main_movie = sorted(m2ts_files, key=lambda x: x.stat().st_size, reverse=True)[0]
-        self.logger.info(f"Found main movie file: {main_movie.name} "
-                        f"({main_movie.stat().st_size / (1024*1024*1024):.2f} GB)")
+        self.logger.info(f'Found main movie file: {main_movie.name} ({main_movie.stat().st_size / (1024*1024*1024):.2f} GB)')
         return main_movie
 
     def process_directory(self):
-        """Process Blu-ray directory structure."""
         self.setup_logging()
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Look for BDMV/STREAM directory
-        stream_dir = self.input_dir / 'BDMV' / 'STREAM'
-        if not stream_dir.exists():
-            self.logger.error(f"Could not find BDMV/STREAM directory in {self.input_dir}")
-            return
-        
+
         try:
-            # Find and process main movie file
-            main_movie = self.find_main_movie_file(stream_dir)
-            self.logger.info(f"Processing main movie file: {main_movie}")
+            # Find main playlist first
+            playlist_info = self.parser.find_main_playlist()
             
-            media_info = self.analyzer.get_media_info(main_movie)
-            self.encoder.encode(main_movie, media_info)
-            
+            if playlist_info and playlist_info.items and all(item.relative_path.exists() for item in playlist_info.items):
+                self.logger.info(f"Found main playlist with {len(playlist_info.items)} items")
+                self.logger.info(f"Movie title: {playlist_info.title}")
+                self.logger.info(f"Total duration: {playlist_info.duration:.2f} seconds")
+                self.logger.info(f"Total size: {playlist_info.size / (1024*1024*1024):.2f} GB")
+                
+                # Debug info about the selected playlist
+                for item in playlist_info.items:
+                    file_size = item.relative_path.stat().st_size / (1024*1024)
+                    self.logger.info(f"Playlist item: {item.filename} ({(item.out_time - item.in_time)/45000:.2f} seconds)")
+                    self.logger.info(f"File exists: {item.relative_path.exists()}")
+                    self.logger.info(f"File size: {file_size:.2f} MB")
+                
+                # Create concat file
+                concat_file = self.output_dir / 'concat.txt'
+                concat_content = ["ffconcat version 1.0"]
+                
+                for item in playlist_info.items:
+                    escaped_path = str(item.relative_path).replace('\\', '/').replace("'", "'\\''")
+                    concat_content.append(f"file '{escaped_path}'")
+                    
+                    # Add trim points if needed
+                    if item.in_time > 0:
+                        concat_content.append(f"inpoint {item.in_time/45000:.6f}")
+                    if item.out_time < float('inf'):
+                        concat_content.append(f"outpoint {item.out_time/45000:.6f}")
+                
+                with open(concat_file, 'w') as f:
+                    f.write('\n'.join(concat_content))
+                
+                self.logger.info(f"Created concat file: {concat_file}")
+                
+                # Get media info from first file
+                first_file = playlist_info.items[0].relative_path
+                self.logger.info(f"Analyzing first file: {first_file}")
+                media_info = self.analyzer.get_media_info(first_file)
+                
+                # Adjust duration for all segments
+                media_info.duration = playlist_info.duration
+                
+                # Create virtual input for FFmpeg
+                virtual_input = Path(f"concat:{concat_file}")
+                self.encoder.encode(virtual_input, media_info, title=playlist_info.title)
+                
+            else:
+                # Fall back to single largest file
+                stream_dir = self.input_dir / 'BDMV' / 'STREAM'
+                self.logger.info(f"Falling back to single file mode. Checking {stream_dir}")
+                main_movie = self.find_main_movie_file(stream_dir)
+                title = self.input_dir.name.replace('.', ' ').strip()
+                
+                self.logger.info(f'Using largest file: {main_movie}')
+                media_info = self.analyzer.get_media_info(main_movie)
+                self.encoder.encode(main_movie, media_info, title=title)
+                
         except Exception as e:
-            self.logger.error(f"Failed to process movie: {e}")
+            self.logger.error(f'Failed to process movie: {e}')
             raise
 
 def create_default_config(config_path: Path):

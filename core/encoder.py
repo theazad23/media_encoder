@@ -2,7 +2,7 @@ import logging
 import subprocess
 from pathlib import Path
 from typing import List, Tuple
-from models.media_info import MediaInfo
+from models.media_info import HDRMetadata, MediaInfo
 from config.encoding_config import EncodingConfig
 from utils.progress import ProgressTracker
 
@@ -44,119 +44,140 @@ class MediaEncoder:
         
         return selected_audio, selected_subs
 
-    def _get_hdr_params(self, media_info: MediaInfo) -> List[str]:
-        """Generate HDR-specific encoding parameters."""
+    def _get_hdr_params(self, hdr_metadata: HDRMetadata) -> List[str]:
+        """Get x265 HDR parameters based on metadata"""
         params = []
-        hdr = media_info.hdr_metadata
-        config = self.config.hdr_settings
-
-        # Force 10-bit encoding if requested or if source is HDR
-        if self.config.force_10bit or hdr.is_hdr:
+        
+        if hdr_metadata.is_hdr:
+            self.logger.info("HDR content detected, adding HDR parameters")
+            # Basic HDR flags
             params.extend([
-                'profile=main10',
-                'high-tier=1',
-                'bit-depth=10'
-            ])
-
-        # Color space parameters
-        if hdr.is_hdr or config['color_primaries'] != 'auto':
-            primaries = config['color_primaries'] if config['color_primaries'] != 'auto' else hdr.color_primaries
-            transfer = config['transfer'] if config['transfer'] != 'auto' else hdr.transfer_characteristics
-            matrix = config['color_matrix'] if config['color_matrix'] != 'auto' else hdr.color_matrix
-            
-            params.extend([
-                f'colorprim={primaries}',
-                f'transfer={transfer}',
-                f'colormatrix={matrix}'
-            ])
-
-        # HDR metadata
-        if hdr.is_hdr and self.config.preserve_hdr:
-            if hdr.max_cll and config['max_cll'] == 'preserve':
-                params.append(f'max-cll={hdr.max_cll}')
-            
-            if hdr.master_display and config['master_display'] == 'preserve':
-                params.append(f'master-display={hdr.master_display}')
-
-            # HDR-specific tuning
-            params.extend([
-                'hdr-opt=1',
+                'hdr10=1',
                 'hdr10-opt=1',
+                'repeat-headers=1',
                 'range=limited'
             ])
-
+            
+            # Color space parameters
+            if hdr_metadata.color_primaries:
+                params.append(f'colorprim={hdr_metadata.color_primaries}')
+            if hdr_metadata.transfer_characteristics:
+                params.append(f'transfer={hdr_metadata.transfer_characteristics}')
+            if hdr_metadata.color_matrix:
+                params.append(f'colormatrix={hdr_metadata.color_matrix}')
+                
+            # HDR10 metadata
+            if hdr_metadata.master_display:
+                params.append(f'master-display={hdr_metadata.master_display}')
+            if hdr_metadata.max_cll:
+                params.append(f'max-cll={hdr_metadata.max_cll}')
+            
+            self.logger.info(f"Added HDR parameters: {params}")
+            
         return params
     
-    def encode(self, input_file: Path, media_info: MediaInfo) -> Path:
-        """Encode the media file with selected settings."""
-        output_file = self.output_dir / f"{input_file.stem}_encoded{input_file.suffix}"
-        
-        selected_audio, selected_subs = self._select_tracks(media_info)
-        
-        # Base FFmpeg command
-        cmd = [
-            'ffmpeg',
-            '-i', str(input_file),
-            '-progress', 'pipe:1',
-            '-map', '0:v:0'  # Always map first video stream
-        ]
-        
-        # Map selected audio tracks
-        for audio_idx in selected_audio:
-            cmd.extend(['-map', f'0:{audio_idx}'])
-            
-        # Map selected subtitle tracks
-        for sub_idx in selected_subs:
-            cmd.extend(['-map', f'0:{sub_idx}'])
-        
-        # Add encoding parameters from config
-        cmd.extend(self.config.get_ffmpeg_params())
-        
-        # Add HDR parameters if needed
-        if self.config.video_codec == 'libx265':
-            x265_params = cmd[cmd.index('-x265-params') + 1].split(':')
-            x265_params.extend(self._get_hdr_params(media_info))
-            cmd[cmd.index('-x265-params') + 1] = ':'.join(x265_params)
-        
-        # Output file
-        cmd.extend([str(output_file)])
-        
+    def encode(self, input_file: Path, media_info: MediaInfo, *, title: str = None) -> Path:
         try:
-            self.logger.info(f"Starting encode of {input_file.name}")
+            if not title:
+                title = input_file.parent.parent.parent.name.replace('.', ' ').strip()
+            if not title:
+                title = "output"
+
+            output_file = self.output_dir / f"{title}.mkv"
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+
+            selected_audio, selected_subs = self._select_tracks(media_info)
             
-            # Set up progress tracking
-            progress = ProgressTracker(media_info.duration, input_file.name)
+            # Build FFmpeg command
+            cmd = ['ffmpeg', '-hide_banner', '-y']
             
-            # Run FFmpeg with progress monitoring
+            # Handle concat input
+            if str(input_file).startswith('concat:'):
+                concat_file = Path(str(input_file).replace('concat:', ''))
+                if concat_file.exists():
+                    self.logger.info(f"Using concat file: {concat_file}")
+                    cmd.extend(['-f', 'concat', '-safe', '0'])
+                    cmd.extend(['-i', str(concat_file)])
+                else:
+                    raise FileNotFoundError(f"Concat file not found: {concat_file}")
+            else:
+                cmd.extend(['-i', str(input_file)])
+            
+            # Add stream mapping
+            cmd.extend(['-map', '0:v:0'])  # First video stream
+            for audio_idx in selected_audio:
+                cmd.extend(['-map', f'0:{audio_idx}'])
+            for sub_idx in selected_subs:
+                cmd.extend(['-map', f'0:{sub_idx}'])
+            
+            # Get base encoding parameters
+            params = self.config.get_ffmpeg_params()
+            
+            # Add HDR parameters if present
+            if hasattr(media_info, 'hdr_metadata') and media_info.hdr_metadata:
+                # Find the x265-params in the existing parameters
+                for i, param in enumerate(params):
+                    if param.startswith('x265-params'):
+                        # Get the existing x265 params
+                        x265_params = param.split(':')[1:]
+                        # Add HDR parameters
+                        x265_params.extend(self._get_hdr_params(media_info.hdr_metadata))
+                        # Update the parameter
+                        params[i] = 'x265-params=' + ':'.join(x265_params)
+                        break
+            
+            # Add encoding parameters
+            cmd.extend(params)
+            cmd.append(str(output_file))
+            
+            self.logger.info("FFmpeg command:")
+            self.logger.info(' '.join(str(x) for x in cmd))
+            
+            self.logger.info(f'Starting encode of {input_file.name} to {output_file}')
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True
+                universal_newlines=True,
+                bufsize=1
             )
             
             while True:
-                line = process.stdout.readline()
-                if not line:
+                line = process.stderr.readline()
+                if not line and process.poll() is not None:
                     break
-                    
-                # Parse FFmpeg progress output
-                if 'out_time_ms=' in line:
-                    time_ms = int(line.split('=')[1])
-                    current_time = time_ms / 1000000.0
-                    progress_str = progress.update(current_time)
-                    if progress_str:
-                        print(progress_str, end='', flush=True)
+                
+                # Log FFmpeg output for debugging
+                if 'Error' in line or 'error' in line:
+                    self.logger.error(f"FFmpeg error: {line.strip()}")
+                elif 'frame=' in line:
+                    # Regular progress update
+                    print(f"\r{line.strip()}", end='', flush=True)
             
-            process.wait()
             print()  # New line after progress
             
             if process.returncode != 0:
+                stderr_output = process.stderr.read()
+                self.logger.error(f"FFmpeg error output:\n{stderr_output}")
                 raise subprocess.CalledProcessError(process.returncode, cmd)
                 
-            self.logger.info(f"Successfully encoded {input_file.name}")
-            return output_file
-            
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Error encoding {input_file.name}: {e}")
+            if output_file.exists():
+                self.logger.info(f'Successfully encoded {input_file.name} to {output_file}')
+                
+                # Clean up concat file if it was used
+                if str(input_file).startswith('concat:'):
+                    concat_file = Path(str(input_file).replace('concat:', ''))
+                    try:
+                        if concat_file.exists():
+                            concat_file.unlink()
+                            self.logger.debug(f"Cleaned up concat file: {concat_file}")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to clean up concat file: {e}")
+                
+                return output_file
+            else:
+                raise FileNotFoundError(f"Expected output file {output_file} was not created")
+                
+        except Exception as e:
+            self.logger.error(f'Error encoding {input_file.name}: {e}', exc_info=True)
             raise
