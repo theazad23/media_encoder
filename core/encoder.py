@@ -2,17 +2,19 @@ import logging
 import subprocess
 from pathlib import Path
 from typing import List, Tuple
-from models.media_info import HDRMetadata, MediaInfo
+from models.media_info import MediaInfo, MediaTrack, HDRMetadata
 from config.encoding_config import EncodingConfig
 from utils.progress import ProgressTracker
 from core.hdr_handler import HDRHandler
 
 class MediaEncoder:
+
     def __init__(self, output_dir: Path, config: EncodingConfig):
         self.output_dir = output_dir
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+        self.hdr_handler = HDRHandler()
+
     def _select_tracks(self, media_info: MediaInfo) -> Tuple[List[int], List[int]]:
         preferred_langs = self.config.preferred_languages or ['eng']
         is_foreign = all((track.language not in preferred_langs for track in media_info.audio_tracks if track.language != 'und'))
@@ -37,10 +39,6 @@ class MediaEncoder:
             
         return (selected_audio, selected_subs)
 
-    def _get_hdr_params(self, hdr_metadata: HDRMetadata) -> List[str]:
-        handler = HDRHandler()
-        return handler.get_encoding_params(hdr_metadata, self.config.video_codec)
-    
     def encode(self, input_file: Path, media_info: MediaInfo, *, title: str=None) -> Path:
         try:
             if not title:
