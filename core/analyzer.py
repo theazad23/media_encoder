@@ -5,36 +5,15 @@ import re
 from pathlib import Path
 from typing import Dict, Any
 from models.media_info import MediaInfo, MediaTrack, HDRMetadata
+from core.hdr_handler import HDRHandler
 
 class MediaAnalyzer:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
     def _parse_hdr_metadata(self, stream_data: Dict[str, Any]) -> HDRMetadata:
-        """Extract HDR metadata from video stream."""
-        metadata = HDRMetadata(
-            color_primaries=stream_data.get('color_primaries', 'unknown'),
-            transfer_characteristics=stream_data.get('color_transfer', 'unknown'),
-            color_matrix=stream_data.get('color_space', 'unknown'),
-            bit_depth=int(stream_data.get('bits_per_raw_sample', 8))
-        )
-
-        side_data = stream_data.get('side_data_list', [])
-        for data in side_data:
-            if data.get('side_data_type') == 'Content light level metadata':
-                metadata.max_cll = f"{data.get('max_content', '')},{data.get('max_average', '')}"
-            elif data.get('side_data_type') == 'Mastering display metadata':
-                display = data.get('master_display_primaries', '')
-                if display:
-                    metadata.master_display = self._format_master_display(display)
-
-        metadata.is_hdr = (
-            metadata.transfer_characteristics in ['smpte2084', 'arib-std-b67'] or
-            metadata.color_primaries == 'bt2020' or
-            metadata.bit_depth > 8
-        )
-
-        return metadata
+        handler = HDRHandler()
+        return handler.detect_hdr_format(stream_data)
 
     def _format_master_display(self, display_data: str) -> str:
         """Format master display metadata for x265."""

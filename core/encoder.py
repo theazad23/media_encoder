@@ -5,6 +5,7 @@ from typing import List, Tuple
 from models.media_info import HDRMetadata, MediaInfo
 from config.encoding_config import EncodingConfig
 from utils.progress import ProgressTracker
+from core.hdr_handler import HDRHandler
 
 class MediaEncoder:
     def __init__(self, output_dir: Path, config: EncodingConfig):
@@ -45,36 +46,8 @@ class MediaEncoder:
         return selected_audio, selected_subs
 
     def _get_hdr_params(self, hdr_metadata: HDRMetadata) -> List[str]:
-        """Get x265 HDR parameters based on metadata"""
-        params = []
-        
-        if hdr_metadata.is_hdr:
-            self.logger.info("HDR content detected, adding HDR parameters")
-            # Basic HDR flags
-            params.extend([
-                'hdr10=1',
-                'hdr10-opt=1',
-                'repeat-headers=1',
-                'range=limited'
-            ])
-            
-            # Color space parameters
-            if hdr_metadata.color_primaries:
-                params.append(f'colorprim={hdr_metadata.color_primaries}')
-            if hdr_metadata.transfer_characteristics:
-                params.append(f'transfer={hdr_metadata.transfer_characteristics}')
-            if hdr_metadata.color_matrix:
-                params.append(f'colormatrix={hdr_metadata.color_matrix}')
-                
-            # HDR10 metadata
-            if hdr_metadata.master_display:
-                params.append(f'master-display={hdr_metadata.master_display}')
-            if hdr_metadata.max_cll:
-                params.append(f'max-cll={hdr_metadata.max_cll}')
-            
-            self.logger.info(f"Added HDR parameters: {params}")
-            
-        return params
+        handler = HDRHandler()
+        return handler.get_encoding_params(hdr_metadata, self.config.video_codec)
     
     def encode(self, input_file: Path, media_info: MediaInfo, *, title: str = None) -> Path:
         try:

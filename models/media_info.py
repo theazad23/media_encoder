@@ -11,6 +11,11 @@ class HDRMetadata:
     master_display: Optional[str] = None
     is_hdr: bool = False
     bit_depth: int = 8
+    hdr_format: str = "unknown"
+    max_luminance: Optional[int] = None
+    min_luminance: Optional[float] = None
+    dolby_vision_profile: Optional[str] = None
+    dolby_vision_rpu: bool = False
 
 @dataclass
 class MediaTrack:

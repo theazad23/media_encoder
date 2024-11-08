@@ -4,41 +4,52 @@ from typing import List, Dict, Optional
 import yaml
 
 @dataclass
+class HDRConfig:
+    preserve_hdr: bool = True
+    force_10bit: bool = True
+    preferred_format: str = "auto"
+    fallback_format: str = "hdr10"
+    dolby_vision_enabled: bool = True
+    dolby_vision_profile: str = "auto"
+
+@dataclass
 class EncodingConfig:
     video_codec: str = 'libx265'
     video_preset: str = 'veryslow'
-    video_crf: int = 14
+    video_crf: int = 13
     max_threads: int = 16
     gpu_device: int = 0
     copy_audio: bool = True
     copy_subtitles: bool = True
     preferred_languages: List[str] = None
-    preserve_hdr: bool = True
-    force_10bit: bool = True
-    hdr_settings: Dict = None
+    hdr_config: HDRConfig = None
     ffmpeg_path: Optional[str] = None
     ffprobe_path: Optional[str] = None
 
+    def __post_init__(self):
+        if self.hdr_config is None:
+            self.hdr_config = HDRConfig()
+        if self.preferred_languages is None:
+            self.preferred_languages = ['eng']
+
     @classmethod
     def from_yaml(cls, config_path: Path) -> 'EncodingConfig':
-        """Load configuration from YAML file."""
         if not config_path.exists():
             return cls()
-        
         with open(config_path, 'r') as f:
             config_data = yaml.safe_load(f)
+            hdr_config_data = config_data.pop('hdr_settings', {})
+            config_data['hdr_config'] = HDRConfig(**hdr_config_data)
             return cls(**config_data)
 
     def to_yaml(self, config_path: Path):
-        """Save configuration to YAML file."""
+        config_dict = self.__dict__.copy()
+        config_dict['hdr_settings'] = config_dict.pop('hdr_config').__dict__
         with open(config_path, 'w') as f:
-            yaml.dump(self.__dict__, f, default_flow_style=False)
+            yaml.dump(config_dict, f, default_flow_style=False)
 
     def get_ffmpeg_params(self) -> List[str]:
-        """Convert config to FFmpeg parameters."""
         params = []
-        
-        # Video codec settings
         params.extend(['-c:v', self.video_codec])
         params.extend(['-preset', self.video_preset])
         
@@ -66,14 +77,10 @@ class EncodingConfig:
                 'weightb=1',
                 'strong-intra-smoothing=0'
             ]
-
-            if self.force_10bit:
-                x265_params.extend([
-                    'profile=main10',
-                    'high-tier=1',
-                    'bit-depth=10'
-                ])
-
+            
+            if self.hdr_config.force_10bit:
+                x265_params.extend(['profile=main10', 'high-tier=1', 'bit-depth=10'])
+            
             params.extend(['-x265-params', ':'.join(x265_params)])
             
         elif self.video_codec == 'hevc_nvenc':
@@ -87,12 +94,12 @@ class EncodingConfig:
                 '-preset', 'p7',
                 '-rc-lookahead', '32',
                 '-spatial_aq', '1',
-                '-temporal_aq', '1',
+                '-temporal_aq', '1'
             ])
-        
-        if self.force_10bit:
+            
+        if self.hdr_config.force_10bit:
             params.extend(['-pix_fmt', 'yuv420p10le'])
-        
+            
         params.extend([
             '-c:a', 'copy' if self.copy_audio else 'aac',
             '-c:s', 'copy' if self.copy_subtitles else 'srt'

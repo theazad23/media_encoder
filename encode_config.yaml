@@ -1,17 +1,17 @@
 # FFmpeg Settings
-ffmpeg_path: null  # Set to path if not in system PATH, e.g., "C:/ffmpeg/bin/ffmpeg.exe"
-ffprobe_path: null # Set to path if not in system PATH, e.g., "C:/ffmpeg/bin/ffprobe.exe"
+ffmpeg_path: null
+ffprobe_path: null
 
-# Maximum Quality Configuration with HDR Support
-video_codec: libx265           # CPU encoding for highest quality
-video_preset: veryslow        # Slowest preset = highest quality
-video_crf: 13                 # Near lossless quality
-max_threads: 16               # Match your 7800X3D thread count
-gpu_device: 0                 # For GPU encoding if needed
-copy_audio: true             # Preserve original audio
-copy_subtitles: true         # Preserve subtitles
-preserve_hdr: true           # Enable HDR metadata preservation
-force_10bit: true            # Force 10-bit encoding even for SDR
+# Video Encoding Settings
+video_codec: libx265
+video_preset: veryslow
+video_crf: 13
+max_threads: 16
+gpu_device: 0
+copy_audio: true
+copy_subtitles: true
+
+# Language Settings
 preferred_languages:
   - eng
   - jpn
@@ -20,8 +20,9 @@ preferred_languages:
 
 # HDR Settings
 hdr_settings:
-  color_primaries: auto      # 'auto', 'bt2020', 'bt709'
-  transfer: auto            # 'auto', 'smpte2084' (HDR10), 'arib-std-b67' (HLG)
-  color_matrix: auto        # 'auto', 'bt2020nc', 'bt709'
-  max_cll: preserve         # 'preserve' or specific value like '1000,400'
-  master_display: preserve  # 'preserve' or specific display specs
+  preserve_hdr: true
+  force_10bit: true
+  preferred_format: auto  # auto, hdr10, hlg, dv
+  fallback_format: hdr10  # Format to use if source format can't be preserved
+  dolby_vision_enabled: true
+  dolby_vision_profile: auto  # auto, 5, 8.1, 8.2, 8.4
