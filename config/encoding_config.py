@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Optional
 import yaml
+import logging
 
 @dataclass
 class HDRConfig:
@@ -16,7 +17,7 @@ class HDRConfig:
 class EncodingConfig:
     video_codec: str = 'libx265'
     video_preset: str = 'veryslow'
-    video_crf: int = 13
+    video_crf: int = 14
     max_threads: int = 16
     gpu_device: int = 0
     copy_audio: bool = True
@@ -31,6 +32,7 @@ class EncodingConfig:
             self.hdr_config = HDRConfig()
         if self.preferred_languages is None:
             self.preferred_languages = ['eng']
+        self.logger = logging.getLogger(__name__)
 
     @classmethod
     def from_yaml(cls, config_path: Path) -> 'EncodingConfig':
@@ -45,43 +47,61 @@ class EncodingConfig:
     def to_yaml(self, config_path: Path):
         config_dict = self.__dict__.copy()
         config_dict['hdr_settings'] = config_dict.pop('hdr_config').__dict__
+        config_dict.pop('logger', None)  # Remove logger before saving
         with open(config_path, 'w') as f:
             yaml.dump(config_dict, f, default_flow_style=False)
 
-    def get_ffmpeg_params(self) -> List[str]:
+    def get_base_x265_params(self) -> List[str]:
+        """Get base x265 encoding parameters"""
+        return [
+            f'crf={self.video_crf}',
+            'pools=+,-',
+            f'frame-threads={self.max_threads}',
+            'rd=4',
+            'psy-rd=2.0',
+            'psy-rdoq=2.0',
+            'aq-mode=3',
+            'aq-strength=0.8',
+            'deblock=-1:-1',
+            'me=star',
+            'subme=7',
+            'ref=6',
+            'rc-lookahead=60',
+            'b-adapt=2',
+            'bframes=8',
+            'keyint=250',
+            'min-keyint=23',
+            'merange=57',
+            'weightp=2',
+            'weightb=1',
+            'strong-intra-smoothing=0'
+        ]
+
+    def get_ffmpeg_params(self, hdr_params: List[str] = None) -> List[str]:
+        """Get FFmpeg encoding parameters"""
         params = []
         params.extend(['-c:v', self.video_codec])
         params.extend(['-preset', self.video_preset])
         
         if self.video_codec == 'libx265':
-            x265_params = [
-                f'crf={self.video_crf}',
-                'pools=+,-',
-                f'frame-threads={self.max_threads}',
-                'rd=4',
-                'psy-rd=2.0',
-                'psy-rdoq=2.0',
-                'aq-mode=3',
-                'aq-strength=0.8',
-                'deblock=-1:-1',
-                'me=star',
-                'subme=7',
-                'ref=6',
-                'rc-lookahead=60',
-                'b-adapt=2',
-                'bframes=8',
-                'keyint=250',
-                'min-keyint=23',
-                'merange=57',
-                'weightp=2',
-                'weightb=1',
-                'strong-intra-smoothing=0'
-            ]
+            # Combine all x265 parameters
+            x265_params = []
             
+            # Add HDR parameters first if they exist
+            if hdr_params:
+                x265_params.extend(hdr_params)
+            
+            # Add base encoding parameters
+            x265_params.extend(self.get_base_x265_params())
+            
+            # Add 10-bit parameters if needed
             if self.hdr_config.force_10bit:
                 x265_params.extend(['profile=main10', 'high-tier=1', 'bit-depth=10'])
             
+            # Join all parameters with colons
             params.extend(['-x265-params', ':'.join(x265_params)])
+            
+            self.logger.debug(f"Final x265 parameters: {':'.join(x265_params)}")
             
         elif self.video_codec == 'hevc_nvenc':
             params.extend([

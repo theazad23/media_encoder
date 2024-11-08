@@ -34,44 +34,44 @@ class BDMVParser:
         version = f"{mpls_data[4]:02d}{mpls_data[5]:02d}{mpls_data[6]:02d}"
         playlist_start = struct.unpack('>I', mpls_data[8:12])[0]
         
-        self.logger.debug(f"MPLS Header - Type: {type_indicator}, Version: {version}, Start: {playlist_start}")
-        self.logger.debug(f"Raw header bytes: {mpls_data[:16].hex()}")
+        # self.logger.debug(f"MPLS Header - Type: {type_indicator}, Version: {version}, Start: {playlist_start}")
+        # self.logger.debug(f"Raw header bytes: {mpls_data[:16].hex()}")
         return (type_indicator, version, playlist_start)
 
     def _parse_clip_info(self, data: bytes, start_pos: int) -> tuple:
         """Parse clip information block"""
         try:
             # Show the raw bytes we're working with
-            self.logger.debug(f"Parsing clip info at position {start_pos}")
-            self.logger.debug(f"Raw bytes: {data[start_pos:start_pos+32].hex()}")
+            # self.logger.debug(f"Parsing clip info at position {start_pos}")
+            # self.logger.debug(f"Raw bytes: {data[start_pos:start_pos+32].hex()}")
             
             # Read clip info length
             clip_info_length = struct.unpack('>H', data[start_pos:start_pos+2])[0]
-            self.logger.debug(f"Clip info length: {clip_info_length}")
+            # self.logger.debug(f"Clip info length: {clip_info_length}")
             
             # Read clip name (5 bytes)
             clip_name_bytes = data[start_pos+2:start_pos+7]
-            self.logger.debug(f"Clip name bytes: {clip_name_bytes.hex()}")
+            # self.logger.debug(f"Clip name bytes: {clip_name_bytes.hex()}")
             
             # Parse the clip number differently - try both methods
             # Method 1: Direct ASCII interpretation
             try:
                 clip_name_ascii = ''.join(chr(b) for b in clip_name_bytes if b != 0)
-                self.logger.debug(f"Clip name (ASCII): {clip_name_ascii}")
+                # self.logger.debug(f"Clip name (ASCII): {clip_name_ascii}")
             except:
                 clip_name_ascii = None
             
             # Method 2: Numeric interpretation
             clip_number = int.from_bytes(clip_name_bytes[-4:], byteorder='big')
             clip_name = f"{clip_number:05d}.m2ts"
-            self.logger.debug(f"Clip name (numeric): {clip_name}")
+            # self.logger.debug(f"Clip name (numeric): {clip_name}")
             
             # Read timestamps
             timestamp_pos = start_pos + 14
             if timestamp_pos + 8 <= len(data):
                 in_time = struct.unpack('>I', data[timestamp_pos:timestamp_pos+4])[0]
                 out_time = struct.unpack('>I', data[timestamp_pos+4:timestamp_pos+8])[0]
-                self.logger.debug(f"Timestamps - In: {in_time}, Out: {out_time}")
+                # self.logger.debug(f"Timestamps - In: {in_time}, Out: {out_time}")
                 
                 return clip_name, clip_info_length, in_time, out_time
                 
@@ -101,24 +101,24 @@ class BDMVParser:
             playlist_length = struct.unpack('>I', mpls_data[offset:offset+4])[0]
             item_count = struct.unpack('>H', mpls_data[offset+6:offset+8])[0]
             
-            self.logger.debug(f"Playlist length: {playlist_length}, Item count: {item_count}")
+            # self.logger.debug(f"Playlist length: {playlist_length}, Item count: {item_count}")
             current_pos = offset + 10
             
             for i in range(item_count):
                 try:
                     # Debug raw data
-                    self.logger.debug(f"Reading item {i} at position {current_pos}")
-                    self.logger.debug(f"Raw data: {mpls_data[current_pos:current_pos+32].hex()}")
+                    # self.logger.debug(f"Reading item {i} at position {current_pos}")
+                    # self.logger.debug(f"Raw data: {mpls_data[current_pos:current_pos+32].hex()}")
                     
                     clip_info_length = struct.unpack('>H', mpls_data[current_pos:current_pos+2])[0]
-                    self.logger.debug(f"Clip info length: {clip_info_length}")
+                    # self.logger.debug(f"Clip info length: {clip_info_length}")
                     
                     # Get clip name (5 bytes after the length)
                     clip_name_pos = current_pos + 2
                     clip_name_bytes = mpls_data[clip_name_pos:clip_name_pos+5]
                     clip_name = self._parse_clip_name(clip_name_bytes)
                     
-                    self.logger.debug(f"Clip name bytes: {clip_name_bytes.hex()}, Clip name: {clip_name}")
+                    # self.logger.debug(f"Clip name bytes: {clip_name_bytes.hex()}, Clip name: {clip_name}")
                     
                     # Get timestamps
                     timestamp_pos = current_pos + 14
@@ -126,7 +126,7 @@ class BDMVParser:
                     out_time = struct.unpack('>I', mpls_data[timestamp_pos+4:timestamp_pos+8])[0]
                     
                     duration = (out_time - in_time) / 45000  # Convert to seconds
-                    self.logger.debug(f"Duration: {duration:.2f} seconds")
+                    # self.logger.debug(f"Duration: {duration:.2f} seconds")
                     
                     if duration > 30:  # Only include clips longer than 30 seconds
                         file_path = self.stream_path / clip_name
@@ -137,8 +137,8 @@ class BDMVParser:
                                 out_time=out_time,
                                 relative_path=file_path
                             ))
-                            self.logger.debug(f"Added item: {clip_name} ({duration:.2f} seconds)")
-                            self.logger.debug(f"File exists at {file_path}")
+                            # self.logger.debug(f"Added item: {clip_name} ({duration:.2f} seconds)")
+                            # self.logger.debug(f"File exists at {file_path}")
                         else:
                             self.logger.warning(f"File not found: {file_path}")
                     
@@ -155,7 +155,7 @@ class BDMVParser:
             
         if items:
             total_duration = sum((item.out_time - item.in_time) / 45000 for item in items)
-            self.logger.info(f"Found {len(items)} valid items in playlist, total duration: {total_duration:.2f} seconds")
+            # self.logger.info(f"Found {len(items)} valid items in playlist, total duration: {total_duration:.2f} seconds")
             
         return items
     
@@ -167,7 +167,7 @@ class BDMVParser:
         
         for mpls_file in sorted(self.playlist_path.glob('*.mpls')):
             try:
-                self.logger.debug(f"\nProcessing playlist: {mpls_file}")
+                # self.logger.debug(f"\nProcessing playlist: {mpls_file}")
                 
                 with open(mpls_file, 'rb') as f:
                     mpls_data = f.read()
@@ -183,7 +183,7 @@ class BDMVParser:
                     total_duration = sum(item.out_time - item.in_time for item in items)
                     duration_seconds = total_duration / 45000
                     
-                    self.logger.debug(f"Playlist {mpls_file.name}: {len(items)} items, {duration_seconds:.2f} seconds")
+                    # self.logger.debug(f"Playlist {mpls_file.name}: {len(items)} items, {duration_seconds:.2f} seconds")
                     
                     # Feature films are typically longer than 60 minutes
                     if duration_seconds > 3600:  # 60 minutes
@@ -196,7 +196,7 @@ class BDMVParser:
                                 size=total_size,
                                 title=title
                             )
-                            self.logger.info(f"Found new main playlist: {mpls_file.name}")
+                            # self.logger.info(f"Found new main playlist: {mpls_file.name}")
             
             except Exception as e:
                 self.logger.error(f"Error processing {mpls_file}: {e}")
